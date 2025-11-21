@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 3000,
-    host: true  // 添加这一行
+    host: true,  // 添加这一行
+    strictPort: false
   }
 })
