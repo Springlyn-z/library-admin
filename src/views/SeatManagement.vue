@@ -1,127 +1,86 @@
-<template>
-  <div class="seat-management">
-    <div class="page-header">
-      <h2 class="page-title">座位管理</h2>
-      <div class="action-buttons">
-        <el-button type="primary" :icon="Plus">新增座位</el-button>
-        <el-button :icon="Upload">批量导入</el-button>
-      </div>
-    </div>
-
-    <!-- 搜索和筛选 -->
-    <el-card class="filter-card">
-      <div class="filter-row">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="搜索座位编号/区域"
-          :prefix-icon="Search"
-          style="width: 300px"
-        />
-        <el-select v-model="floorFilter" placeholder="所有楼层">
-          <el-option label="所有楼层" value="" />
-          <el-option label="一楼" value="1" />
-          <el-option label="二楼" value="2" />
-          <el-option label="三楼" value="3" />
-        </el-select>
-        <el-select v-model="areaFilter" placeholder="所有区域">
-          <el-option label="所有区域" value="" />
-          <el-option label="安静区" value="quiet" />
-          <el-option label="讨论区" value="discussion" />
-          <el-option label="窗边座位" value="window" />
-        </el-select>
-      </div>
-    </el-card>
-
-    <!-- 座位表格 -->
-    <el-card class="table-card">
-      <el-table :data="seatData" style="width: 100%">
-        <el-table-column prop="id" label="座位编号" width="120" />
-        <el-table-column prop="location" label="位置" />
-        <el-table-column prop="facilities" label="设施" width="180">
-          <template #default="{ row }">
-            <div class="facilities">
-              <el-tag v-if="row.hasPower" size="small" type="success">电源</el-tag>
-              <el-tag v-if="row.hasLamp" size="small">台灯</el-tag>
-              <el-tag v-if="row.hasPartition" size="small" type="info">隔音</el-tag>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" effect="light">
-              {{ row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120">
-          <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button type="primary" :icon="Edit" size="small" link />
-              <el-button type="danger" :icon="Delete" size="small" link />
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 分页 -->
-      <div class="pagination">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :page-sizes="[10, 20, 50, 100]"
-          :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
-        />
-      </div>
-    </el-card>
-  </div>
-</template>
-
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { Plus, Upload, Search, Edit, Delete } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { seatAPI } from '../api/index.js'  // 修改导入路径
 
 const searchKeyword = ref('')
 const floorFilter = ref('')
 const areaFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
-const total = ref(386)
+const total = ref(0)
+const loading = ref(false)
 
-const seatData = ref([
-  {
-    id: 'A101',
-    location: '1层-东区-窗边',
-    hasPower: true,
-    hasLamp: true,
-    hasPartition: false,
-    status: '可用'
-  },
-  {
-    id: 'B205',
-    location: '2层-南区-讨论区',
-    hasPower: false,
-    hasLamp: false,
-    hasPartition: true,
-    status: '占用'
-  },
-  {
-    id: 'C302',
-    location: '3层-西区-安静区',
-    hasPower: true,
-    hasLamp: false,
-    hasPartition: false,
-    status: '暂离'
+// 响应式座位数据
+const seatData = ref([])
+
+// 获取座位列表
+const fetchSeatList = async () => {
+  loading.value = true
+  try {
+    const params = {
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      floor: floorFilter.value,
+      area: areaFilter.value
+    }
+    
+    const response = await seatAPI.getSeatList(params)
+    if (response.code === 200) {
+      seatData.value = response.data.list
+      total.value = response.data.total
+    }
+  } catch (error) {
+    console.error('获取座位列表失败:', error)
+    ElMessage.error('获取数据失败')
+  } finally {
+    loading.value = false
   }
-])
+}
+
+// 删除座位
+const handleDelete = async (seatId) => {
+  try {
+    const response = await seatAPI.deleteSeat(seatId)
+    if (response.code === 200) {
+      ElMessage.success('删除成功')
+      fetchSeatList() // 重新加载数据
+    } else {
+      ElMessage.error(response.message)
+    }
+  } catch (error) {
+    ElMessage.error('删除失败')
+  }
+}
+
+// 页面加载时获取数据
+onMounted(() => {
+  fetchSeatList()
+})
+
+// 监听筛选条件变化
+watch([floorFilter, areaFilter], () => {
+  currentPage.value = 1
+  fetchSeatList()
+})
 
 const getStatusType = (status) => {
   const statusMap = {
-    '可用': 'success',
-    '占用': 'danger',
-    '暂离': 'warning'
+    'available': 'success',
+    'occupied': 'danger',
+    'temporary': 'warning'
   }
   return statusMap[status] || 'info'
+}
+
+const getStatusText = (status) => {
+  const statusMap = {
+    'available': '可用',
+    'occupied': '占用', 
+    'temporary': '暂离'
+  }
+  return statusMap[status] || '未知'
 }
 </script>
 
@@ -179,3 +138,83 @@ const getStatusType = (status) => {
   border-top: 1px solid #e5e7eb;
 }
 </style>
+
+<template>
+  <div class="seat-management">
+    <div class="page-header">
+      <h2 class="page-title">座位管理</h2>
+      <div class="action-buttons">
+        <el-button type="primary" :icon="Plus">新增座位</el-button>
+        <el-button :icon="Upload">批量导入</el-button>
+      </div>
+    </div>
+
+    <!-- 搜索和筛选 -->
+    <el-card class="filter-card">
+      <div class="filter-row">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索座位编号/区域"
+          :prefix-icon="Search"
+          style="width: 300px"
+        />
+        <el-select v-model="floorFilter" placeholder="所有楼层">
+          <el-option label="所有楼层" value="" />
+          <el-option label="一楼" value="1F" />
+          <el-option label="二楼" value="2F" />
+          <el-option label="三楼" value="3F" />
+        </el-select>
+        <el-select v-model="areaFilter" placeholder="所有区域">
+          <el-option label="所有区域" value="" />
+          <el-option label="安静区" value="quiet" />
+          <el-option label="讨论区" value="discussion" />
+          <el-option label="窗边座位" value="window" />
+        </el-select>
+      </div>
+    </el-card>
+
+    <!-- 座位表格 -->
+    <el-card class="table-card">
+      <el-table :data="seatData" v-loading="loading" style="width: 100%">
+        <el-table-column prop="id" label="座位编号" width="120" />
+        <el-table-column prop="location" label="位置" />
+        <el-table-column prop="floor" label="楼层" width="80" />
+        <el-table-column label="设施" width="180">
+          <template #default="{ row }">
+            <div class="facilities">
+              <el-tag v-if="row.hasPower" size="small" type="success">电源</el-tag>
+              <el-tag v-if="row.hasLamp" size="small" type="primary">台灯</el-tag>
+              <el-tag v-if="row.hasPartition" size="small" type="info">隔音</el-tag>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getStatusType(row.status)" effect="light">
+              {{ getStatusText(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <div class="action-buttons">
+              <el-button type="primary" :icon="Edit" size="small" link />
+              <el-button type="danger" :icon="Delete" size="small" link @click="handleDelete(row.id)" />
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 分页 -->
+      <div class="pagination">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
+    </el-card>
+  </div>
+</template>
